@@ -15,6 +15,8 @@ func UnwrapOSError(err error) Errno {
 	switch err {
 	case nil, io.EOF:
 		return 0 // EOF is not a Errno
+	case io.ErrClosedPipe:
+		return EPIPE
 	case fs.ErrInvalid:
 		return EINVAL
 	case fs.ErrPermission:

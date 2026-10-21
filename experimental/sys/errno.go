@@ -41,6 +41,7 @@ const (
 	ENOTSUP
 	EPERM
 	EROFS
+	EPIPE
 
 	// NOTE ENOTCAPABLE is defined in wasip1, but not in POSIX. wasi-libc
 	// converts it to EBADF, ESPIPE or EINVAL depending on the call site.
@@ -90,6 +91,8 @@ func (e Errno) Error() string {
 		return "not supported (may be the same value as [EOPNOTSUPP])"
 	case EPERM:
 		return "operation not permitted"
+	case EPIPE:
+		return "broken pipe"
 	case EROFS:
 		return "read-only file system"
 	default:

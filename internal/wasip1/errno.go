@@ -282,6 +282,8 @@ func ToErrno(errno sys.Errno) Errno {
 		return ErrnoIntr
 	case sys.EINVAL:
 		return ErrnoInval
+	case sys.EPIPE:
+		return ErrnoPipe
 	case sys.EIO:
 		return ErrnoIo
 	case sys.EISDIR:

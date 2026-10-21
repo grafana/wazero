@@ -12,6 +12,7 @@ func TestToErrno(t *testing.T) {
 		input    sys.Errno
 		expected Errno
 	}{
+		{name: "sys.EPIPE", input: sys.EPIPE, expected: ErrnoPipe},
 		{
 			name:     "zero is not an error",
 			expected: ErrnoSuccess,
