@@ -50,6 +50,8 @@ func syscallToErrno(err error) (Errno, bool) {
 		return ENOTSUP, true
 	case syscall.EPERM:
 		return EPERM, true
+	case syscall.EPIPE:
+		return EPIPE, true
 	case syscall.EROFS:
 		return EROFS, true
 	default:
@@ -98,6 +100,8 @@ func (e Errno) Unwrap() error {
 		return syscall.ENOTSUP
 	case EPERM:
 		return syscall.EPERM
+	case EPIPE:
+		return syscall.EPIPE
 	case EROFS:
 		return syscall.EROFS
 	default:

@@ -15,6 +15,8 @@ func TestUnwrapOSError(t *testing.T) {
 		input    error
 		expected Errno
 	}{
+		{name: "io.ErrClosedPipe", input: io.ErrClosedPipe, expected: EPIPE},
+		{name: "wrapped closed pipe", input: &os.PathError{Op: "write", Path: "stdout", Err: io.ErrClosedPipe}, expected: EPIPE},
 		{
 			name:     "io.EOF is not an error",
 			input:    io.EOF,
