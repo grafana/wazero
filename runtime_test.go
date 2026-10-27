@@ -553,6 +553,50 @@ func TestRuntime_InstantiateModule_ExitError(t *testing.T) {
 	}
 }
 
+// TestRuntime_InstantiateModule_ExitPanic ensures that exiting by panicking
+// with a sys.ExitError, as proc_exit does, doesn't build the module's
+// function definitions for a stack trace that is never returned.
+func TestRuntime_InstantiateModule_ExitPanic(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		config RuntimeConfig
+	}{
+		{name: "interpreter", config: NewRuntimeConfigInterpreter()},
+		{name: "compiler", config: NewRuntimeConfigCompiler()},
+	} {
+		if tc.name == "compiler" && !platform.CompilerSupported() {
+			continue
+		}
+		t.Run(tc.name, func(t *testing.T) {
+			r := NewRuntimeWithConfig(testCtx, tc.config)
+			defer r.Close(testCtx)
+
+			exit := func(ctx context.Context, m api.Module) {
+				_ = m.CloseWithExitCode(ctx, 0)
+				panic(sys.NewExitError(0))
+			}
+			_, err := r.NewHostModuleBuilder("env").
+				NewFunctionBuilder().WithFunc(exit).Export("exit").
+				Instantiate(testCtx)
+			require.NoError(t, err)
+
+			one := uint32(1)
+			compiled, err := r.CompileModule(testCtx, binaryencoding.EncodeModule(&wasm.Module{
+				TypeSection:     []wasm.FunctionType{{}},
+				ImportSection:   []wasm.Import{{Module: "env", Name: "exit", Type: wasm.ExternTypeFunc, DescFunc: 0}},
+				FunctionSection: []wasm.Index{0},
+				CodeSection:     []wasm.Code{{Body: []byte{wasm.OpcodeCall, 0, wasm.OpcodeEnd}}},
+				StartSection:    &one,
+			}))
+			require.NoError(t, err)
+
+			_, err = r.InstantiateModule(testCtx, compiled, NewModuleConfig())
+			require.Equal(t, sys.NewExitError(0), err)
+			require.Nil(t, compiled.(*compiledModule).module.FunctionDefinitionSection)
+		})
+	}
+}
+
 func TestRuntime_CloseWithExitCode(t *testing.T) {
 	bin := binaryencoding.EncodeModule(&wasm.Module{
 		TypeSection:     []wasm.FunctionType{{}},
