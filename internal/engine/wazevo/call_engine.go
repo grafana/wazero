@@ -16,6 +16,7 @@ import (
 	"github.com/tetratelabs/wazero/internal/wasm"
 	"github.com/tetratelabs/wazero/internal/wasmdebug"
 	"github.com/tetratelabs/wazero/internal/wasmruntime"
+	"github.com/tetratelabs/wazero/sys"
 )
 
 type (
@@ -226,15 +227,23 @@ func (c *callEngine) addFrame(builder wasmdebug.ErrorBuilder, addr uintptr) (def
 
 	if cm != nil {
 		index := cm.functionIndexOf(addr)
-		def = cm.module.FunctionDefinition(cm.module.ImportFunctionCount + index)
-		var sources []string
-		if dw := cm.module.DWARFLines; dw != nil {
-			sourceOffset := cm.getSourceOffset(addr)
-			sources = dw.Line(sourceOffset)
-		}
-		builder.AddFrame(def.DebugName(), def.ParamTypes(), def.ResultTypes(), sources)
 		if len(cm.listeners) > 0 {
 			listener = cm.listeners[index]
+		}
+		// A nil builder means no stack trace is wanted, so only look up the
+		// definition if a listener needs it: the first lookup builds the
+		// definitions of every function in the module.
+		if builder == nil && listener == nil {
+			return
+		}
+		def = cm.module.FunctionDefinition(cm.module.ImportFunctionCount + index)
+		if builder != nil {
+			var sources []string
+			if dw := cm.module.DWARFLines; dw != nil {
+				sourceOffset := cm.getSourceOffset(addr)
+				sources = dw.Line(sourceOffset)
+			}
+			builder.AddFrame(def.DebugName(), def.ParamTypes(), def.ResultTypes(), sources)
 		}
 	}
 	return
@@ -295,7 +304,12 @@ func (c *callEngine) callWithStack(ctx context.Context, paramResultStack []uint6
 			}
 
 			var listeners []listenerForAbort
-			builder := wasmdebug.NewErrorBuilder()
+			// An exit error, such as from proc_exit, is returned without a
+			// stack trace, so don't build one.
+			var builder wasmdebug.ErrorBuilder
+			if _, exit := r.(*sys.ExitError); !exit {
+				builder = wasmdebug.NewErrorBuilder()
+			}
 			if c.execCtx.stackPointerBeforeGoCall != nil {
 				def, lsn := c.addFrame(builder, uintptr(unsafe.Pointer(c.execCtx.goCallReturnAddress)))
 				if lsn != nil {
@@ -316,7 +330,11 @@ func (c *callEngine) callWithStack(ctx context.Context, paramResultStack []uint6
 					}
 				}
 			}
-			err = builder.FromRecovered(r)
+			if builder != nil {
+				err = builder.FromRecovered(r)
+			} else {
+				err = r.(*sys.ExitError)
+			}
 
 			for _, lsn := range listeners {
 				lsn.lsn.Abort(ctx, m, lsn.def, err)

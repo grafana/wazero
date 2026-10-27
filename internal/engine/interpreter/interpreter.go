@@ -20,6 +20,7 @@ import (
 	"github.com/tetratelabs/wazero/internal/wasm"
 	"github.com/tetratelabs/wazero/internal/wasmdebug"
 	"github.com/tetratelabs/wazero/internal/wasmruntime"
+	"github.com/tetratelabs/wazero/sys"
 )
 
 // callStackCeiling is the maximum WebAssembly call frame stack height. This allows wazero to raise
@@ -812,6 +813,10 @@ func (ce *callEngine) recoverOnCall(ctx context.Context, m *wasm.ModuleInstance,
 		v = wasmruntime.ErrRuntimeUncaughtException
 	}
 
+	// An exit error, such as from proc_exit, is returned without a stack
+	// trace, so don't build one: the first definition lookup builds the
+	// definitions of every function in the module.
+	exitErr, exit := v.(*sys.ExitError)
 	builder := wasmdebug.NewErrorBuilder()
 	frameCount := len(ce.frames)
 	functionListeners := make([]functionListenerInvocation, 0, 16)
@@ -822,6 +827,15 @@ func (ce *callEngine) recoverOnCall(ctx context.Context, m *wasm.ModuleInstance,
 	for i := 0; i < frameCount; i++ {
 		frame := ce.popFrame()
 		f := frame.f
+		if exit {
+			if f.parent.listener != nil {
+				functionListeners = append(functionListeners, functionListenerInvocation{
+					FunctionListener: f.parent.listener,
+					def:              f.definition(),
+				})
+			}
+			continue
+		}
 		def := f.definition()
 		var sources []string
 		if parent := frame.f.parent; parent.body != nil && len(parent.offsetsInWasmBinary) > 0 {
@@ -836,7 +850,11 @@ func (ce *callEngine) recoverOnCall(ctx context.Context, m *wasm.ModuleInstance,
 		}
 	}
 
-	err = builder.FromRecovered(v)
+	if exit {
+		err = exitErr
+	} else {
+		err = builder.FromRecovered(v)
+	}
 	for i := range functionListeners {
 		functionListeners[i].Abort(ctx, m, functionListeners[i].def, err)
 	}
